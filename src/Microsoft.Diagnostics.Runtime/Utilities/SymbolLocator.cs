@@ -620,10 +620,20 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 var fullUri = serverPath + "/" + pdbIndexPath.Replace('\\', '/');
                 try
                 {
-                    var req = (System.Net.HttpWebRequest)System.Net.HttpWebRequest.Create(fullUri);
+                    var req = WebRequest.CreateHttp(fullUri);
                     req.UserAgent = "Microsoft-Symbol-Server/6.13.0009.1140";
                     req.Timeout = Timeout;
-                    var response = req.GetResponse();
+                    var response = (HttpWebResponse)req.GetResponse();
+
+                    // Only proceed if the server returned a 200 OK response.
+                    // Otherwise, assume the requested resource isn't available
+                    // (in case the server returned e.g. a 301 Permanently Moved).
+                    if (response.StatusCode != HttpStatusCode.OK)
+                    {
+                        Trace("Probe of {0} failed. Server responded with status code {1}.", fullUri, response.StatusCode);
+                        return null;
+                    }
+
                     using (var fromStream = response.GetResponseStream())
                     {
                         if (returnContents)

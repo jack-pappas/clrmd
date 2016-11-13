@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -421,10 +422,20 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 string fullUri = serverPath + "/" + fileIndexPath.Replace('\\', '/');
                 try
                 {
-                    var req = (System.Net.HttpWebRequest)System.Net.HttpWebRequest.Create(fullUri);
+                    var req = WebRequest.CreateHttp(fullUri);
                     req.UserAgent = "Microsoft-Symbol-Server/6.13.0009.1140";
                     req.Timeout = Timeout;
-                    var response = await req.GetResponseAsync();
+                    var response = (HttpWebResponse)await req.GetResponseAsync();
+
+                    // Only proceed if the server returned a 200 OK response.
+                    // Otherwise, assume the requested resource isn't available
+                    // (in case the server returned e.g. a 301 Permanently Moved).
+                    if (response.StatusCode != HttpStatusCode.OK)
+                    {
+                        Trace("Probe of {0} failed. Server responded with status code {1}.", fullUri, response.StatusCode);
+                        return null;
+                    }
+
                     using (var fromStream = response.GetResponseStream())
                     {
                         if (returnContents)
