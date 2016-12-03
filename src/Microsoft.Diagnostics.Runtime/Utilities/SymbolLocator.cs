@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Runtime.InteropServices;
 
@@ -399,6 +400,24 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
     /// </summary>
     public partial class DefaultSymbolLocator : SymbolLocator
     {
+        private const string HttpUserAgent = "Microsoft-Symbol-Server/6.13.0009.1140";
+
+        private readonly HttpClient _httpClient;
+
+        /// <summary>
+        /// Creates a new <see cref="DefaultSymbolLocator"/> instance.
+        /// </summary>
+        public DefaultSymbolLocator()
+        {
+            // Create the HttpClient instance.
+            var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            _httpClient = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromMilliseconds(Timeout)
+            };
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(HttpUserAgent);
+        }
+
         /// <summary>
         /// Default implementation of finding a pdb.
         /// </summary>
@@ -621,7 +640,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 try
                 {
                     var req = WebRequest.CreateHttp(fullUri);
-                    req.UserAgent = "Microsoft-Symbol-Server/6.13.0009.1140";
+                    req.UserAgent = HttpUserAgent;
                     req.Timeout = Timeout;
                     var response = (HttpWebResponse)req.GetResponse();
 

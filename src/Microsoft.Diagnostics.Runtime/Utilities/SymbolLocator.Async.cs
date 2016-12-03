@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -285,7 +286,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             return result;
         }
 
-
         private async Task<string> CheckAndCopyRemoteFile(string sourcePath, string fullDestPath, Func<string, bool> matches)
         {
             if (!matches(sourcePath))
@@ -422,27 +422,30 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 string fullUri = serverPath + "/" + fileIndexPath.Replace('\\', '/');
                 try
                 {
-                    var req = WebRequest.CreateHttp(fullUri);
-                    req.UserAgent = "Microsoft-Symbol-Server/6.13.0009.1140";
-                    req.Timeout = Timeout;
-                    var response = (HttpWebResponse)await req.GetResponseAsync();
+                    var response = await _httpClient.GetAsync(fullUri);
 
-                    // Only proceed if the server returned a 200 OK response.
+                    // Only proceed if the server returned a "success" response.
                     // Otherwise, assume the requested resource isn't available
                     // (in case the server returned e.g. a 301 Permanently Moved).
-                    if (response.StatusCode != HttpStatusCode.OK)
+                    if (!response.IsSuccessStatusCode)
                     {
                         Trace("Probe of {0} failed. Server responded with status code {1}.", fullUri, response.StatusCode);
                         return null;
                     }
 
-                    using (var fromStream = response.GetResponseStream())
-                    {
-                        if (returnContents)
-                            return await new StreamReader(fromStream).ReadToEndAsync();
+                    if (returnContents)
+                        return await response.Content.ReadAsStringAsync();
 
-                        Directory.CreateDirectory(Path.GetDirectoryName(fullDestPath));
-                        await CopyStreamToFileAsync(fromStream, fullUri, fullDestPath, response.ContentLength);
+                    // The reported size of the content, according to the HTTP header;
+                    // this isn't guaranteed to be the actual size of the content (the server
+                    // could have sent a bad value in the header) so this is only useful
+                    // for reporting/informational purposes.
+                    var reportedSize = response.Content.Headers.ContentLength ?? -1;
+
+                    using (var fromStream = await response.Content.ReadAsStreamAsync())
+                    {
+                        // Copy response data to file.
+                        await CopyStreamToFileAsync(fromStream, fullUri, fullDestPath, reportedSize);
                         Trace("Found '{0}' at '{1}'.  Copied to '{2}'.", Path.GetFileName(fileIndexPath), fullUri, fullDestPath);
                         return fullDestPath;
                     }
@@ -502,7 +505,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             lock (entries)
                 return entries.Contains(entry);
         }
-
 
         /// <summary>
         /// Copies the given file from the input stream into fullDestPath.
